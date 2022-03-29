@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Video Stream Demo</title>
+
+    <script src="https://player.live-video.net/1.6.1/amazon-ivs-player.min.js"></script>
+  </head>
+  <body>
+    <video
+      width="520"
+      height="440"
+      id="video-player"
+      controls
+      playsinline
+    ></video>
+    <p id="captions"></p>
+    <script>
+      if (IVSPlayer.isPlayerSupported) {
+        const player = IVSPlayer.create();
+        player.attachHTMLVideoElement(document.getElementById("video-player"));
+        player.load("AmazonIVS_Channel_URL");
+        player.play();
+      }
+    </script>
+    <script>
+      //Get access to user's microphone
+      navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+        if (!MediaRecorder.isTypeSupported("audio/webm"))
+          return alert("Browser not supported");
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: "audio/webm",
+        });
+
+        //open connection to Deepgram
+        const socket = new WebSocket("wss://api.deepgram.com/v1/listen", [
+          "token",
+          "API_KEY",
+        ]);
+
+        //listen for audio data coming from microphone and send it to Deepgram
+        socket.onopen = () => {
+          mediaRecorder.addEventListener("dataavailable", async (event) => {
+            if (event.data.size > 0 && socket.readyState == 1) {
+              socket.send(event.data);
+            }
+          });
+          mediaRecorder.start(1000);
+        };
+
+        // Put the transcript onto the screen in the #captions element
+        socket.onmessage = (message) => {
+          const received = JSON.parse(message.data);
+          const transcript = received.channel.alternatives[0].transcript;
+          if (transcript && received.is_final) {
+            document.querySelector("#captions").textContent += transcript + " ";
+          }
+        };
+
+        socket.onclose = () => {
+          console.log({ event: "onclose" });
+        };
+
+        socket.onerror = (error) => {
+          console.log({ event: "onerror", error });
+        };
+      });
+    </script>
+  </body>
+</html>
